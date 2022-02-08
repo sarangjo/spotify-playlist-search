@@ -5,23 +5,22 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"log"
-	"net/http"
 
-	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/clientcredentials"
+
+	"github.com/zmb3/spotify/v2"
+	spotifyauth "github.com/zmb3/spotify/v2/auth"
 )
 
 var c chan string
 
 const (
+	tokenFile   = "token.json"
 	redirectUri = "http://localhost:8081/callback"
 )
 
 func main() {
-	c = make(chan string)
-
-	go server2()
-
+	ctx := context.Background()
 	credRaw, err := ioutil.ReadFile("credentials.json")
 	if err != nil {
 		panic(err)
@@ -32,72 +31,36 @@ func main() {
 		panic(err)
 	}
 
-	ctx := context.Background()
-	conf := &oauth2.Config{
+	config := &clientcredentials.Config{
 		ClientID:     creds["id"],
 		ClientSecret: creds["secret"],
+		TokenURL:     spotifyauth.TokenURL,
 		Scopes:       []string{"playlist-read-private"},
-		Endpoint: oauth2.Endpoint{
-			AuthURL:  "https://accounts.spotify.com/authorize",
-			TokenURL: "https://accounts.spotify.com/api/token",
-		},
-		RedirectURL: redirectUri,
 	}
 
-	// Redirect user to consent page to ask for permission
-	// for the scopes specified above.
-	url := conf.AuthCodeURL("state", oauth2.AccessTypeOffline)
-	fmt.Printf("Visit the URL for the auth dialog: %v\n", url)
+	token, err := config.Token(ctx)
 
-	// Wait on code
-	code := <-c
+	httpClient := spotifyauth.New().Client(ctx, token)
+	client := spotify.New(httpClient)
 
-	// Exchange will do the handshake to retrieve the
-	// initial access token. The HTTP Client returned by
-	// conf.Client will refresh the token as necessary.
-	tok, err := conf.Exchange(ctx, code)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Handoff client
-	client := conf.Client(ctx, tok)
-	process(client)
-}
-
-func process(client *http.Client) {
-	resp, err := client.Get("https://api.spotify.com/v1/me")
+	user, err := client.CurrentUser(ctx)
 	if err != nil {
 		panic(err)
 	}
 
-	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
+	fmt.Println("Your id is:", user.ID)
+	fmt.Println("Your display name is:", user.DisplayName)
+
+	playl, err := client.GetPlaylistsForUser(ctx, user.ID, spotify.Limit(50))
 	if err != nil {
 		panic(err)
 	}
 
-	res := make(map[string]interface{})
-	err = json.Unmarshal(body, &res)
-	if err != nil {
-		panic(err)
+	for _, p := range playl.Playlists {
+		if p.Owner.ID != user.ID {
+			continue
+		}
+
+		ep := p.Tracks.
 	}
-
-	fmt.Println("Your user id is", res["id"].(string))
-	fmt.Println("Your display name is", res["display_name"].(string))
-}
-
-func server2() {
-	http.HandleFunc("/callback", callback2)
-
-	http.ListenAndServe(":8081", nil)
-}
-
-func callback2(w http.ResponseWriter, req *http.Request) {
-	q := req.URL.Query()
-	code := q.Get("code")
-
-	c <- code
-
-	w.Write([]byte("success"))
 }
