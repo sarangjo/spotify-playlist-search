@@ -10,16 +10,17 @@ import (
 
 func main() {
 	client := getClient()
+	ctx := context.Background()
 
 	// use the client to make calls that require authorization
-	user, err := client.CurrentUser(context.Background())
+	user, err := client.CurrentUser(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
 	fmt.Println("You are logged in as:", user.ID)
 	fmt.Println("Your display name is:", user.DisplayName)
 
-	playlists, err := client.CurrentUsersPlaylists(context.Background(), spotify.Limit(50))
+	playlists, err := client.CurrentUsersPlaylists(ctx, spotify.Limit(50))
 	if err != nil {
 		log.Fatal(err)
 	}
